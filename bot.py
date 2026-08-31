@@ -130,14 +130,7 @@ async def play_voice_phrase(channel):
         vc = await channel.connect()
         print("✅ Подключился к голосовому каналу")
         
-        # Проверяем папку
-        print(f"📁 Проверяю папку: {AUDIO_FOLDER}")
-        files = os.listdir(AUDIO_FOLDER)
-        print(f"📁 Содержимое: {files}")
-        
-        audio_files = [f for f in files if f.endswith(('.mp3', '.wav'))]
-        print(f"📁 Найдено аудиофайлов: {len(audio_files)}")
-        
+        audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
         if not audio_files:
             await channel.send("❌ Нет аудиофайлов!")
             await vc.disconnect()
@@ -145,23 +138,22 @@ async def play_voice_phrase(channel):
 
         audio_file = random.choice(audio_files)
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
-        print(f"🎵 Полный путь: {audio_path}")
-        print(f"🎵 Файл существует: {os.path.exists(audio_path)}")
-        
-        # Воспроизводим
-        vc.play(discord.FFmpegPCMAudio(audio_path))
-        print("▶️ Запустил воспроизведение")
+        print(f"🎵 Играю: {audio_path}")
+
+        # Используем `before_options` для отключения звукового устройства
+        vc.play(discord.FFmpegPCMAudio(audio_path, **{
+            'before_options': '-re -loglevel panic -nostats -nostdin',
+            'options': '-vn -acodec pcm_s16le -ar 48000 -ac 2'
+        }))
         
         while vc.is_playing():
             await asyncio.sleep(0.5)
-            print("⏳ Играет...")
         
-        print("✅ Воспроизведение закончено")
         await vc.disconnect()
-        print("👋 Отключился")
+        print("✅ Воспроизведение закончено")
 
     except Exception as e:
-        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
+        print(f"❌ Ошибка: {e}")
         await channel.send(f"❌ Ошибка: {e}")
 
 @bot.event
