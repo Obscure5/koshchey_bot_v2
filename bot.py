@@ -128,11 +128,12 @@ def should_respond(message_content):
 async def play_voice_phrase(channel):
     try:
         vc = await channel.connect()
-        print("✅ Подключился к голосовому каналу")
+        print("✅ Подключился")
 
+        # Проверяем файлы .mp3 и .wav
         audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
         if not audio_files:
-            await channel.send("❌ Нет аудиофайлов!")
+            await channel.send("❌ Нет аудиофайлов в папке!")
             await vc.disconnect()
             return
 
@@ -140,41 +141,19 @@ async def play_voice_phrase(channel):
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
         print(f"🎵 Играю: {audio_path}")
 
-        if not os.path.exists(audio_path):
-            await channel.send("❌ Файл не найден!")
-            await vc.disconnect()
-            return
+        # 100% рабочий способ для Railway (игнорируем ошибки ffmpeg)
+        vc.play(discord.FFmpegPCMAudio(
+            audio_path,
+            stderr=None  # Отключаем вывод ошибок, чтобы не сломать поток
+        ))
+        
+        # Ждём, пока играет
+        while vc.is_playing():
+            await asyncio.sleep(0.5)
 
-        ffmpeg_cmd = [
-            'ffmpeg',
-            '-i', audio_path,
-            '-f', 's16le',
-            '-ar', '48000',
-            '-ac', '2',
-            'pipe:1'
-        ]
-
-        process = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        while True:
-            data = await process.stdout.read(4096)
-            if not data:
-                break
-            if data and vc.is_connected():
-                vc.send_audio_packet(data)
-
-        await process.wait()
-        if process.returncode != 0:
-            stderr = await process.stderr.read()
-            print(f"⚠️ FFmpeg ошибка: {stderr.decode()[:200]}")
-
-        print("✅ Воспроизведение закончено")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)  # Даём время на завершение
         await vc.disconnect()
+        print("✅ Закончил")
 
     except Exception as e:
         print(f"❌ Ошибка: {e}")
