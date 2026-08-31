@@ -3,6 +3,7 @@ import random
 import asyncio
 import subprocess
 import concurrent.futures
+
 import discord
 from discord.ext import tasks
 from openai import AsyncOpenAI
@@ -124,7 +125,6 @@ def should_respond(message_content):
         return random.random() < 0.5
     return random.random() < 0.3
 
-# ⚠️ ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ ГОЛОСА
 async def play_voice_phrase(channel):
     try:
         vc = await channel.connect()
@@ -140,7 +140,11 @@ async def play_voice_phrase(channel):
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
         print(f"🎵 Играю: {audio_path}")
 
-        # Создаём процесс ffmpeg, который конвертирует аудио в PCM и отправляет в stdout
+        if not os.path.exists(audio_path):
+            await channel.send("❌ Файл не найден!")
+            await vc.disconnect()
+            return
+
         ffmpeg_cmd = [
             'ffmpeg',
             '-i', audio_path,
@@ -150,33 +154,34 @@ async def play_voice_phrase(channel):
             'pipe:1'
         ]
 
-        # Запускаем процесс
         process = await asyncio.create_subprocess_exec(
             *ffmpeg_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Читаем PCM данные и отправляем в Discord
         while True:
             data = await process.stdout.read(4096)
             if not data:
                 break
-            # Отправляем аудио в голосовой канал
-            vc.send_audio_packet(data)
+            if data and vc.is_connected():
+                vc.send_audio_packet(data)
 
         await process.wait()
-        print("✅ Воспроизведение закончено")
+        if process.returncode != 0:
+            stderr = await process.stderr.read()
+            print(f"⚠️ FFmpeg ошибка: {stderr.decode()[:200]}")
 
-        # Небольшая задержка, чтобы аудио точно успело проиграться
-        await asyncio.sleep(1)
+        print("✅ Воспроизведение закончено")
+        await asyncio.sleep(0.5)
         await vc.disconnect()
-        print("👋 Отключился")
 
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
-        await channel.send(f"❌ Ошибка: {e}")
-        # Если ошибка, всё равно отключаемся
+        print(f"❌ Ошибка: {e}")
+        try:
+            await channel.send(f"❌ Ошибка: {e}")
+        except:
+            pass
         try:
             await vc.disconnect()
         except:
