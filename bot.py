@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ⚠️ АВТОСОЗДАНИЕ ПАПКИ С АУДИО
-AUDIO_FOLDER = "audio_koshchey"
+AUDIO_FOLDER = "/app/audio_koshchey"
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
 
 # ⚠️ ПРОВЕРКА ПЕРЕМЕННЫХ С ПОДСКАЗКАМИ
