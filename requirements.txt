@@ -1,0 +1,5 @@
+discord.py==2.5.2
+openai>=1.0.0
+python-dotenv
+pynacl
+ffmpeg-python
