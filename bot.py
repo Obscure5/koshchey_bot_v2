@@ -1,9 +1,7 @@
 import os
 import random
 import asyncio
-import subprocess
 import shutil
-import concurrent.futures
 
 import discord
 from discord.ext import tasks
@@ -12,9 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ⚠️ ПАПКА С АУДИО (путь для Railway)
+# ⚠️ НАСТРОЙКИ (как в музыкальном боте)
 AUDIO_FOLDER = "/app/audio_koshchey"
 os.makedirs(AUDIO_FOLDER, exist_ok=True)
+
+FFMPEG_PATH = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -36,6 +36,7 @@ deepseek = AsyncOpenAI(
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
+intents.guilds = True
 
 bot = discord.Client(intents=intents)
 conversation = {}
@@ -126,17 +127,29 @@ def should_respond(message_content):
         return random.random() < 0.5
     return random.random() < 0.3
 
+# ⚠️ ФУНКЦИЯ ПОДКЛЮЧЕНИЯ (из музыкального бота)
+async def ensure_voice(channel):
+    """Подключается к голосовому каналу"""
+    vc = channel.guild.voice_client
+    if vc and vc.is_connected():
+        await vc.move_to(channel)
+    else:
+        vc = await channel.connect()
+    return vc
+
+# ⚠️ ФУНКЦИЯ ВОСПРОИЗВЕДЕНИЯ (адаптирована из музыкального бота)
 async def play_voice_phrase(channel):
     try:
-        # Подключаемся к голосу (как в музыкальном боте)
-        vc = channel.guild.voice_client
-        if vc and vc.is_connected():
-            await vc.move_to(channel)
-        else:
-            vc = await channel.connect()
+        # Подключаемся через ensure_voice
+        vc = await ensure_voice(channel)
         print("✅ Подключился к голосовому каналу")
 
-        # Ищем файлы в папке
+        if not vc or not vc.is_connected():
+            print("❌ Не удалось подключиться к голосу")
+            await channel.send("❌ Не удалось подключиться к голосовому каналу")
+            return
+
+        # Ищем файлы
         audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
         if not audio_files:
             await channel.send("❌ Нет аудиофайлов!")
@@ -148,16 +161,17 @@ async def play_voice_phrase(channel):
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
         print(f"🎵 Играю: {audio_path}")
 
-        # БЕРЁМ ПАРАМЕТРЫ ИЗ МУЗЫКАЛЬНОГО БОТА (этот момент важен!)
+        # Создаём источник (как в музыкальном боте)
         source = discord.FFmpegPCMAudio(
             audio_path,
-            executable="/usr/bin/ffmpeg",  # Путь к ffmpeg (как в музыкальном боте)
+            executable=FFMPEG_PATH,
             before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
             options="-vn"
         )
 
-        # Ставим на воспроизведение
+        # Воспроизводим
         vc.play(source)
+        print("▶️ Запустил воспроизведение")
 
         # Ждём, пока играет
         while vc.is_playing():
@@ -174,13 +188,16 @@ async def play_voice_phrase(channel):
         except:
             pass
         try:
-            await vc.disconnect()
+            if vc and vc.is_connected():
+                await vc.disconnect()
         except:
             pass
 
 @bot.event
 async def on_ready():
     print(f"✅ Кощей (с голосом) запущен: {bot.user}")
+    print(f"FFmpeg: {FFMPEG_PATH}")
+    print(f"Папка аудио: {AUDIO_FOLDER}")
     if not random_chat.is_running():
         random_chat.start()
 
@@ -189,6 +206,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # ⚠️ КОМАНДА ДЛЯ ГОЛОСА
     if message.content.lower() in ["!зайди", "!голос", "!озвучь"]:
         if message.author.voice and message.author.voice.channel:
             channel = message.author.voice.channel
@@ -198,6 +216,7 @@ async def on_message(message):
             await message.channel.send("❌ Ты должен быть в голосовом канале!")
         return
 
+    # ⚠️ ОБРАБОТКА УПОМИНАНИЙ
     if bot.user in message.mentions:
         text = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
         if not text:
@@ -208,6 +227,7 @@ async def on_message(message):
             await message.reply(answer[:2000])
         return
 
+    # ⚠️ АВТОМАТИЧЕСКИЙ ОТВЕТ В ЧАТЕ
     if should_respond(message.content):
         async with message.channel.typing():
             await asyncio.sleep(random.uniform(1.0, 3.0))
