@@ -128,9 +128,15 @@ def should_respond(message_content):
 async def play_voice_phrase(channel):
     try:
         vc = await channel.connect()
+        print("✅ Подключился к голосовому каналу")
         
-        audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
-        print(f"📁 Найдено файлов: {len(audio_files)} в {AUDIO_FOLDER}")
+        # Проверяем папку
+        print(f"📁 Проверяю папку: {AUDIO_FOLDER}")
+        files = os.listdir(AUDIO_FOLDER)
+        print(f"📁 Содержимое: {files}")
+        
+        audio_files = [f for f in files if f.endswith(('.mp3', '.wav'))]
+        print(f"📁 Найдено аудиофайлов: {len(audio_files)}")
         
         if not audio_files:
             await channel.send("❌ Нет аудиофайлов!")
@@ -139,29 +145,23 @@ async def play_voice_phrase(channel):
 
         audio_file = random.choice(audio_files)
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
-        print(f"🎵 Играю: {audio_path}")
-
-        # Проверяем файл через ffmpeg
-        try:
-            result = subprocess.run(['ffmpeg', '-i', audio_path], capture_output=True, text=True)
-            print(f"FFmpeg проверка: {result.stderr[:200]}")
-        except Exception as e:
-            print(f"Ошибка ffmpeg: {e}")
-
-        # Воспроизводим с правильными параметрами для Railway
-        vc.play(discord.FFmpegPCMAudio(audio_path, **{
-            'before_options': '-re -loglevel panic',
-            'options': '-vn -ar 44100 -ac 1 -b:a 96k -bufsize 64k'
-        }))
+        print(f"🎵 Полный путь: {audio_path}")
+        print(f"🎵 Файл существует: {os.path.exists(audio_path)}")
+        
+        # Воспроизводим
+        vc.play(discord.FFmpegPCMAudio(audio_path))
+        print("▶️ Запустил воспроизведение")
         
         while vc.is_playing():
-            await asyncio.sleep(1)
-
+            await asyncio.sleep(0.5)
+            print("⏳ Играет...")
+        
+        print("✅ Воспроизведение закончено")
         await vc.disconnect()
-        print(f"✅ Воспроизведён файл: {audio_file}")
+        print("👋 Отключился")
 
     except Exception as e:
-        print(f"❌ Голосовая ошибка: {e}")
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
         await channel.send(f"❌ Ошибка: {e}")
 
 @bot.event
