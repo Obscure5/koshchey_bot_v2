@@ -2,7 +2,7 @@ import os
 import random
 import asyncio
 import subprocess
-
+import concurrent.futures
 import discord
 from discord.ext import tasks
 from openai import AsyncOpenAI
@@ -129,7 +129,7 @@ async def play_voice_phrase(channel):
     try:
         vc = await channel.connect()
         print("✅ Подключился к голосовому каналу")
-        
+
         audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
         if not audio_files:
             await channel.send("❌ Нет аудиофайлов!")
@@ -140,21 +140,47 @@ async def play_voice_phrase(channel):
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
         print(f"🎵 Играю: {audio_path}")
 
-        # Используем `before_options` для отключения звукового устройства
-        vc.play(discord.FFmpegPCMAudio(audio_path, **{
-            'before_options': '-re -loglevel panic -nostats -nostdin',
-            'options': '-vn -acodec pcm_s16le -ar 48000 -ac 2'
-        }))
-        
-        while vc.is_playing():
-            await asyncio.sleep(0.5)
-        
-        await vc.disconnect()
+        # Создаём процесс ffmpeg, который конвертирует аудио в PCM и отправляет в stdout
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-i', audio_path,
+            '-f', 's16le',
+            '-ar', '48000',
+            '-ac', '2',
+            'pipe:1'
+        ]
+
+        # Запускаем процесс
+        process = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        # Читаем PCM данные и отправляем в Discord
+        while True:
+            data = await process.stdout.read(4096)
+            if not data:
+                break
+            # Отправляем аудио в голосовой канал
+            vc.send_audio_packet(data)
+
+        await process.wait()
         print("✅ Воспроизведение закончено")
 
+        # Небольшая задержка, чтобы аудио точно успело проиграться
+        await asyncio.sleep(1)
+        await vc.disconnect()
+        print("👋 Отключился")
+
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"❌ Критическая ошибка: {e}")
         await channel.send(f"❌ Ошибка: {e}")
+        # Если ошибка, всё равно отключаемся
+        try:
+            await vc.disconnect()
+        except:
+            pass
 
 @bot.event
 async def on_ready():
