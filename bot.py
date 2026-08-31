@@ -2,6 +2,7 @@ import os
 import random
 import asyncio
 import subprocess
+import shutil
 import concurrent.futures
 
 import discord
@@ -127,33 +128,44 @@ def should_respond(message_content):
 
 async def play_voice_phrase(channel):
     try:
-        vc = await channel.connect()
-        print("✅ Подключился")
+        # Подключаемся к голосу (как в музыкальном боте)
+        vc = channel.guild.voice_client
+        if vc and vc.is_connected():
+            await vc.move_to(channel)
+        else:
+            vc = await channel.connect()
+        print("✅ Подключился к голосовому каналу")
 
-        # Проверяем файлы .mp3 и .wav
+        # Ищем файлы в папке
         audio_files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(('.mp3', '.wav'))]
         if not audio_files:
-            await channel.send("❌ Нет аудиофайлов в папке!")
+            await channel.send("❌ Нет аудиофайлов!")
             await vc.disconnect()
             return
 
+        # Выбираем случайный файл
         audio_file = random.choice(audio_files)
         audio_path = os.path.join(AUDIO_FOLDER, audio_file)
         print(f"🎵 Играю: {audio_path}")
 
-        # 100% рабочий способ для Railway (игнорируем ошибки ffmpeg)
-        vc.play(discord.FFmpegPCMAudio(
+        # БЕРЁМ ПАРАМЕТРЫ ИЗ МУЗЫКАЛЬНОГО БОТА (этот момент важен!)
+        source = discord.FFmpegPCMAudio(
             audio_path,
-            stderr=None  # Отключаем вывод ошибок, чтобы не сломать поток
-        ))
-        
+            executable="/usr/bin/ffmpeg",  # Путь к ffmpeg (как в музыкальном боте)
+            before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+            options="-vn"
+        )
+
+        # Ставим на воспроизведение
+        vc.play(source)
+
         # Ждём, пока играет
         while vc.is_playing():
             await asyncio.sleep(0.5)
 
-        await asyncio.sleep(1)  # Даём время на завершение
+        await asyncio.sleep(0.5)
         await vc.disconnect()
-        print("✅ Закончил")
+        print("✅ Отключился")
 
     except Exception as e:
         print(f"❌ Ошибка: {e}")
